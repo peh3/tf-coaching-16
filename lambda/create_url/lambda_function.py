@@ -1,72 +1,77 @@
-import os
 import json
 import boto3
-from string import ascii_letters, digits
-from random import choice, randint
-from time import strftime, time
-from urllib import parse
+import os
+import random
+import string
+import time
+from datetime import datetime, timezone
 
+ddb = boto3.resource('dynamodb', region_name=os.environ.get('REGION_AWS', 'us-east-1'))
+table = ddb.Table(os.environ.get('DB_NAME'))
 
-app_url = os.getenv('APP_URL')  #Your API Gateway Custom Domain
-min_char = int(os.getenv('MIN_CHAR'))  #e.g. 12 (min length of shortid)
-max_char = int(os.getenv('MAX_CHAR'))  #e.g. 16 (max length of shortid)
-region_aws = os.getenv('REGION_AWS')
-db_tablename = os.getenv('DB_NAME')
-string_format = ascii_letters + digits
-
-ddb = boto3.resource('dynamodb', region_name = region_aws).Table(db_tablename)
-
-def generate_timestamp():
-    response = strftime("%Y-%m-%dT%H:%M:%S")
-    return response
-
-def expiry_date():
-    response = int(time()) + int(604800)
-    return response
-
-def check_id(short_id):
-    if 'Item' in ddb.get_item(Key={'short_id': short_id}):
-        response = generate_id()
-    else:
-        return short_id
-
-def generate_id():
-    short_id = "".join(choice(string_format) for x in range(randint(min_char, max_char)))
-    print(short_id)
-    response = check_id(short_id)
-    return response
+def generate_short_id(min_c, max_c):
+    length = random.randint(int(min_c), int(max_c))
+    chars = string.ascii_letters + string.digits
+    return ''.join(random.choice(chars) for _ in range(length))
 
 def lambda_handler(event, context):
-    analytics = {}
-    print(event)
-    short_id = generate_id()
-    short_url = app_url + short_id
-    long_url = json.loads(event.get('body')).get('long_url')
-    timestamp = generate_timestamp()
-    ttl_value = expiry_date()
-   
-    analytics['user_agent'] = event.get('headers').get('User-Agent')
-    analytics['source_ip'] = event.get('headers').get('X-Forwarded-For')
-    analytics['xray_trace_id'] = event.get('headers').get('X-Amzn-Trace-Id')
-   
-    if len(parse.urlsplit(long_url).query) > 0:
-        url_params = dict(parse.parse_qsl(parse.urlsplit(long_url).query))
-        for k in url_params:
-            analytics[k] = url_params[k]
+    body = event.get('body')
+    if isinstance(body, str):
+        try:
+            body = json.loads(body)
+        except Exception:
+            body = {}
+    elif not isinstance(body, dict):
+        body = {}
 
-    response = ddb.put_item(
+    # Check both 'url' and 'long_url' in the body, plus queryStringParameters as fallback
+    long_url = (
+        body.get('url') or 
+        body.get('long_url') or 
+        (event.get('queryStringParameters') or {}).get('url') or
+        (event.get('queryStringParameters') or {}).get('long_url')
+    )
+
+    if not long_url:
+        return {
+            "statusCode": 400,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "Missing 'url' or 'long_url' in request payload."})
+        }
+
+    short_id = generate_short_id(os.environ.get('MIN_CHAR', 12), os.environ.get('MAX_CHAR', 16))
+    app_url = os.environ.get('APP_URL', '')
+    short_url = f"{app_url}{short_id}"
+
+    # Calculate TTL (7 days)
+    now_epoch = int(time.time())
+    ttl = now_epoch + (7 * 24 * 60 * 60)
+
+    # Store in DynamoDB
+    table.put_item(
         Item={
             'short_id': short_id,
-            'created_at': timestamp,
-            'ttl': int(ttl_value),
+            'long_url': str(long_url),
             'short_url': short_url,
-            'long_url': long_url,
-            'analytics': analytics,
-            'hits': int(0)
+            'hits': 0,
+            'ttl': ttl,
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'analytics': {
+                'source_ip': event.get('requestContext', {}).get('identity', {}).get('sourceIp', 'unknown'),
+                'user_agent': event.get('requestContext', {}).get('identity', {}).get('userAgent', 'unknown'),
+                'xray_trace_id': event.get('headers', {}).get('X-Amzn-Trace-Id', 'unknown')
+            }
         }
     )
-   
+
     return {
         "statusCode": 200,
-        "body": short_url
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+        },
+        "body": json.dumps({
+            "short_url": short_url,
+            "short_id": short_id
+        })
     }
