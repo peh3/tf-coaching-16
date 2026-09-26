@@ -1,0 +1,42 @@
+name: "Terraform Manual Import"
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_address:
+        description: "Terraform Resource Address (e.g., aws_wafv2_web_acl.api_gw_waf)"
+        required: true
+        type: string
+      resource_id:
+        description: "Resource ID string (e.g., <WEB_ACL_ID>/tk-tf-coaching16-api-gateway-waf/REGIONAL)"
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  terraform-import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.OIDC_ROLE }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.0"
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Execute Terraform Import
+        run: |
+          terraform import '${{ inputs.resource_address }}' '${{ inputs.resource_id }}'
