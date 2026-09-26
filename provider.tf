@@ -15,7 +15,7 @@ terraform {
 
   backend "s3" {
     bucket = "sctp-tfstate-ce13"
-    key    = "tk/tf-tk-coaching-16.tfstate"
+    key    = "tk/tf-coaching-16-terraform.tfstate"
     region = "us-east-1"
   }
 }
