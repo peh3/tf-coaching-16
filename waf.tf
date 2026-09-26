@@ -1,6 +1,6 @@
 # IP Set allowlisting developer IP
 resource "aws_wafv2_ip_set" "allowed_ips" {
-  name               = "${var.project_name}-allow-only-my-ips"
+  name               = "${var.project_name}-allow-my-ips-only"
   description        = "Allowlist for authorized developer IPs"
   scope              = "REGIONAL"
   ip_address_version = "IPV4"
