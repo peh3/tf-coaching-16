@@ -4,6 +4,6 @@ output "custom_domain_url" {
 }
 
 output "waf_log_group_name" {
-  description = "CloudWatch log group recording blocked requests"
+  description = "CloudWatch log group recording blocked requests!"
   value       = aws_cloudwatch_log_group.waf_logs.name
 }
