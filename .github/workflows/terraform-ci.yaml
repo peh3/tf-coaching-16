@@ -2,7 +2,7 @@ name: Terraform CI
 
 on:
   pull_request:
-    branches: [ "*" ]
+    branches: [ "main" ]
 
 permissions:
   id-token: write       # Required for OIDC
